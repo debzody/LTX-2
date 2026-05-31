@@ -66,9 +66,10 @@ def build_ui() -> gr.Blocks:
 
                 with gr.Row():
                     pipeline_kind = gr.Radio(
-                        choices=["two-stage", "distilled"],
-                        value="two-stage",
+                        choices=["two-stage", "distilled", "one-stage"],
+                        value="one-stage",
                         label="Pipeline",
+                        info="one-stage = smallest disk/VRAM (best for free Colab). distilled = fastest. two-stage = best quality.",
                     )
                     enhance_prompt = gr.Checkbox(value=False, label="Enhance prompt")
 
@@ -184,16 +185,19 @@ def main() -> None:
     })
 
     if not _DEMO_MODE:
-        missing = [k for k in (
-            "checkpoint_path", "distilled_lora", "spatial_upsampler_path", "gemma_root"
-        ) if not CFG.get(k)]
-        if missing:
+        # checkpoint_path + gemma_root are always required.
+        always = [k for k in ("checkpoint_path", "gemma_root") if not CFG.get(k)]
+        if always:
             print(
                 "[WARN] Missing required model paths: "
-                + ", ".join(missing)
-                + "\nThe UI will start but generation will fail until you restart "
-                "with --checkpoint-path / --distilled-lora / --spatial-upsampler-path / --gemma-root.",
+                + ", ".join(always)
+                + "\nThe UI will start but generation will fail without these.",
             )
+        # The other paths are pipeline-specific; just hint at availability.
+        if not CFG.get("spatial_upsampler_path"):
+            print("[INFO] No --spatial-upsampler-path: only the 'one-stage' pipeline is available.")
+        if not CFG.get("distilled_lora"):
+            print("[INFO] No --distilled-lora: the 'two-stage' pipeline is unavailable.")
 
     demo = build_ui()
     demo.queue().launch(server_name=args.host, server_port=args.port, share=args.share)

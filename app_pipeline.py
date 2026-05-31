@@ -15,6 +15,7 @@ import gradio as gr
 # Lazy-imported below.
 torch = None
 TI2VidTwoStagesPipeline = None
+TI2VidOneStagePipeline = None
 DistilledPipeline = None
 MultiModalGuiderParams = None
 LoraPathStrengthAndSDOps = None
@@ -27,7 +28,7 @@ build_fp8_cast_policy = None
 
 
 def _import_ltx() -> None:
-    global torch, TI2VidTwoStagesPipeline, DistilledPipeline
+    global torch, TI2VidTwoStagesPipeline, TI2VidOneStagePipeline, DistilledPipeline
     global MultiModalGuiderParams, LoraPathStrengthAndSDOps, LTXV_LORA_COMFY_RENAMING_MAP
     global TilingConfig, get_video_chunks_number, ImageConditioningInput
     global encode_video, build_fp8_cast_policy
@@ -46,12 +47,14 @@ def _import_ltx() -> None:
         get_video_chunks_number as _gvc,
     )
     from ltx_pipelines.ti2vid_two_stages import TI2VidTwoStagesPipeline as _TP
+    from ltx_pipelines.ti2vid_one_stage import TI2VidOneStagePipeline as _OP
     from ltx_pipelines.distilled import DistilledPipeline as _DP
     from ltx_pipelines.utils.args import ImageConditioningInput as _ICI
     from ltx_pipelines.utils.media_io import encode_video as _ev
 
     torch = _torch
     TI2VidTwoStagesPipeline = _TP
+    TI2VidOneStagePipeline = _OP
     DistilledPipeline = _DP
     MultiModalGuiderParams = _GP
     LoraPathStrengthAndSDOps = _LP
@@ -97,12 +100,18 @@ def load_pipeline(kind: str):
         quantization = build_fp8_cast_policy(CFG["checkpoint_path"])
 
     if kind == "distilled":
-        # DistilledPipeline does not take a separate distilled_lora argument; the
-        # LoRA (if any) is passed via `loras`. The checkpoint should already be
-        # a distilled one.
         _PIPELINE = DistilledPipeline(
             distilled_checkpoint_path=CFG["checkpoint_path"],
             spatial_upsampler_path=CFG["spatial_upsampler_path"],
+            gemma_root=CFG["gemma_root"],
+            loras=[],
+            quantization=quantization,
+        )
+    elif kind == "one-stage":
+        # No upsampler, no distilled LoRA — smallest disk + memory footprint.
+        # Best for free-tier Colab where disk space is tight.
+        _PIPELINE = TI2VidOneStagePipeline(
+            checkpoint_path=CFG["checkpoint_path"],
             gemma_root=CFG["gemma_root"],
             loras=[],
             quantization=quantization,
@@ -148,14 +157,15 @@ def generate(
 ):
     if not prompt or not prompt.strip():
         raise gr.Error("Please enter a prompt.")
-    required = ["checkpoint_path", "spatial_upsampler_path", "gemma_root"]
+    required = ["checkpoint_path", "gemma_root"]
+    if pipeline_kind in ("two-stage", "distilled"):
+        required.append("spatial_upsampler_path")
     if pipeline_kind == "two-stage":
         required.append("distilled_lora")
     if not all(CFG.get(k) for k in required):
         raise gr.Error(
-            "Pipeline is not configured. Start the app with --checkpoint-path, "
-            "--spatial-upsampler-path, --gemma-root "
-            "(and --distilled-lora for the two-stage pipeline)."
+            f"Pipeline '{pipeline_kind}' needs: {', '.join(required)}. "
+            "Start the app with the matching --... flags."
         )
 
     progress(0.0, desc="Loading pipeline (first run can take minutes)...")
