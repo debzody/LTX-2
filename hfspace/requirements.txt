@@ -1,0 +1,17 @@
+# Pinned for HF Spaces (Python 3.10+).
+# Install LTX-2 + UI in one shot.
+
+# CUDA 12.1 wheels — Spaces T4 ships with CUDA 12.1 by default.
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.7.0
+torchaudio
+torchvision
+
+# LTX-2 packages (installed from upstream GitHub at build time).
+git+https://github.com/Lightricks/LTX-2.git#subdirectory=packages/ltx-core
+git+https://github.com/Lightricks/LTX-2.git#subdirectory=packages/ltx-pipelines
+
+# UI deps.
+gradio>=4.44
+huggingface_hub[cli]>=0.24
+safetensors>=0.4
