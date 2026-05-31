@@ -140,7 +140,15 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--gemma-root", required=False, help="Path to Gemma text encoder dir")
     p.add_argument(
         "--quantization", choices=["none", "fp8-cast"], default="none",
-        help="Optional weight quantization",
+        help="Optional weight quantization (disabled when --offload-mode != none).",
+    )
+    p.add_argument(
+        "--offload-mode", choices=["none", "cpu", "disk"], default="none",
+        help=(
+            "Stream transformer weights from CPU RAM (cpu) or disk (disk) to "
+            "fit on small GPUs. cpu: ~5 GB VRAM + ~36 GB RAM (use this on Kaggle T4). "
+            "disk: ~5 GB VRAM + ~5 GB RAM, slowest. none: full model on GPU."
+        ),
     )
     p.add_argument("--output-dir", default=None, help="Where to write generated mp4s")
     p.add_argument("--host", default="127.0.0.1")
@@ -181,6 +189,7 @@ def main() -> None:
         "spatial_upsampler_path": args.spatial_upsampler_path,
         "gemma_root": args.gemma_root,
         "quantization": None if args.quantization == "none" else args.quantization,
+        "offload_mode": args.offload_mode,
         "output_dir": args.output_dir,
     })
 

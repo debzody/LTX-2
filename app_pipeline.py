@@ -25,13 +25,14 @@ get_video_chunks_number = None
 ImageConditioningInput = None
 encode_video = None
 build_fp8_cast_policy = None
+OffloadMode = None
 
 
 def _import_ltx() -> None:
     global torch, TI2VidTwoStagesPipeline, TI2VidOneStagePipeline, DistilledPipeline
     global MultiModalGuiderParams, LoraPathStrengthAndSDOps, LTXV_LORA_COMFY_RENAMING_MAP
     global TilingConfig, get_video_chunks_number, ImageConditioningInput
-    global encode_video, build_fp8_cast_policy
+    global encode_video, build_fp8_cast_policy, OffloadMode
 
     if torch is not None:
         return
@@ -51,6 +52,7 @@ def _import_ltx() -> None:
     from ltx_pipelines.distilled import DistilledPipeline as _DP
     from ltx_pipelines.utils.args import ImageConditioningInput as _ICI
     from ltx_pipelines.utils.media_io import encode_video as _ev
+    from ltx_pipelines.utils.types import OffloadMode as _OM
 
     torch = _torch
     TI2VidTwoStagesPipeline = _TP
@@ -63,6 +65,7 @@ def _import_ltx() -> None:
     get_video_chunks_number = _gvc
     ImageConditioningInput = _ICI
     encode_video = _ev
+    OffloadMode = _OM
 
     try:
         from ltx_core.quantization.fp8_cast import build_policy as _bp
@@ -95,8 +98,19 @@ def load_pipeline(kind: str):
     if torch is not None and torch.cuda.is_available():
         torch.cuda.empty_cache()
 
+    # OffloadMode and FP8 quantization don't mix — offload streams full-precision
+    # weights from CPU/disk, so quant happens on the GPU side after streaming and
+    # loses its memory benefit. Skip quant when offloading.
+    offload_str = (CFG.get("offload_mode") or "none").lower()
+    offload_mode = {
+        "none": OffloadMode.NONE,
+        "cpu": OffloadMode.CPU,
+        "disk": OffloadMode.DISK,
+    }[offload_str]
+
     quantization = None
-    if CFG.get("quantization") == "fp8-cast" and build_fp8_cast_policy is not None:
+    if offload_mode == OffloadMode.NONE and CFG.get("quantization") == "fp8-cast" \
+            and build_fp8_cast_policy is not None:
         quantization = build_fp8_cast_policy(CFG["checkpoint_path"])
 
     if kind == "distilled":
@@ -106,15 +120,15 @@ def load_pipeline(kind: str):
             gemma_root=CFG["gemma_root"],
             loras=[],
             quantization=quantization,
+            offload_mode=offload_mode,
         )
     elif kind == "one-stage":
-        # No upsampler, no distilled LoRA — smallest disk + memory footprint.
-        # Best for free-tier Colab where disk space is tight.
         _PIPELINE = TI2VidOneStagePipeline(
             checkpoint_path=CFG["checkpoint_path"],
             gemma_root=CFG["gemma_root"],
             loras=[],
             quantization=quantization,
+            offload_mode=offload_mode,
         )
     elif kind == "two-stage":
         distilled_lora = [
@@ -131,6 +145,7 @@ def load_pipeline(kind: str):
             gemma_root=CFG["gemma_root"],
             loras=[],
             quantization=quantization,
+            offload_mode=offload_mode,
         )
     else:
         raise ValueError("Unknown pipeline kind: " + kind)
