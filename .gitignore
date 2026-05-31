@@ -47,3 +47,4 @@ tmp
 
 # Binary files
 *.so
+.venv-ui/
